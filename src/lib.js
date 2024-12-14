@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto'
 import net from 'node:net'
 import { Readable, Writable } from 'node:stream'
-import http from 'http'
-import https from 'https'
 
 /**
  * @import {WebSocketServer} from 'ws'
@@ -19,6 +17,39 @@ export const md5 = (/**@type{string}*/s) => createHash("md5").update(s).digest('
 export const sleep = (/** @type {number} */ timeout) => new Promise((resolve) => setTimeout(resolve, timeout))
 export const sha256 = (/**@type{string}*/s) => createHash("sha256").update(s).digest('hex')
 export const sha512 = (/**@type{string}*/s) => createHash("sha512").update(s).digest('hex')
+
+/**
+ * @param {(ac: AbortController) => Promise<void>} func
+ */
+export async function runWithAbortController(func) {
+    let ac = new AbortController()
+    try {
+        await func(ac)
+        await sleep(1000)
+    } finally { ac.abort() }
+}
+
+/**
+ * @param {number} size
+ */
+export function formatSize(size) {
+    if (typeof size !== 'number') return ''
+    if (size <= 0) { return '0B'.padStart(8, ' ') }
+    let companys = 'B KB MB GB TB'.split(' ')
+    let cur = size
+    while (cur >= 1024) {
+        companys.shift()
+        cur /= 1024
+    }
+    return `${formatNumber(cur)}${companys[0]}`.padStart(8, ' ')
+}
+
+/**
+ * @param {number} num
+ */
+export function formatNumber(num) {
+    return Number(num.toFixed(2))
+}
 
 /**
  * @typedef {{
