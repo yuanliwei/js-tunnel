@@ -1086,7 +1086,7 @@ export function createTunnelTcpClientHelper(param) {
         listenKeyParamMap.set(key, { host: param.host, port: param.port, key_iv })
         /** @type{TUNNEL_TCP_DATA_LISTEN} */
         let listenData = { key: key }
-        encodeWriter.write(buildTcpTunnelData({
+        await encodeWriter.write(buildTcpTunnelData({
             type: TUNNEL_TCP_TYPE_LISTEN,
             srcId: outParam.clientDataId,
             srcChannel: 0,

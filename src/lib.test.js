@@ -39,7 +39,7 @@ test('tunnel-tcp-socket-test', async () => {
                 console.error(err.message)
             })
         }).listen(9006)
-        socketServer.on('error',(e)=>{console.error(e.message)})
+        socketServer.on('error', (e) => { console.error(e.message) })
         await sleep(100)
 
         console.info('创建监听服务')
@@ -110,7 +110,7 @@ test('tunnel-tcp-socket-test-websocket', async () => {
                 console.error(err.message)
             })
         }).listen(9016)
-        socketServer.on('error',(e)=>{console.error(e.message)})
+        socketServer.on('error', (e) => { console.error(e.message) })
         await sleep(100)
 
         console.info('创建监听服务')
@@ -125,7 +125,7 @@ test('tunnel-tcp-socket-test-websocket', async () => {
 
         console.info('创建转发服务')
         let server = http.createServer().listen(9015)
-        server.on('error',(e)=>{console.error(e.message)})
+        server.on('error', (e) => { console.error(e.message) })
         let wss = new WebSocketServer({ server })
         ac.signal.addEventListener('abort', () => server.close())
         createTunnelTcpServerWebSocket({ signal: ac.signal, serverKey: '2934c57f790f9e99a52a121802df231c', wss, path: '/tunnel/ae145dce31bfa94f0c837749320030bb' })
@@ -183,7 +183,7 @@ test('tunnel-tcp-socket-test-http', async () => {
                 console.error(err.message)
             })
         }).listen(9036)
-        socketServer.on('error',(e)=>{console.error(e.message)})
+        socketServer.on('error', (e) => { console.error(e.message) })
         await sleep(100)
 
         console.info('创建监听服务')
@@ -202,9 +202,10 @@ test('tunnel-tcp-socket-test-http', async () => {
         createTunnelTcpServerKoaRouter({ signal: ac.signal, serverKey: '2934c57f790f9e99a52a121802df231c', router: router, path: '/tunnel/0f7c5b2c9080eaa9e4d6139126daac04', })
         app.use(router.routes())
         app.use(router.allowedMethods())
+        app.onerror = (err) => console.info(err.message)
         let koaServer = http.createServer(app.callback())
         koaServer.listen(9035)
-        koaServer.on('error',(e)=>{console.error(e.message)})
+        koaServer.on('error', (e) => { console.error(e.message) })
         ac.signal.addEventListener('abort', () => { koaServer.close() })
         await sleep(1000)
 
@@ -275,9 +276,10 @@ test('backpressure-socket', async () => {
         })
         app.use(router.routes())
         app.use(router.allowedMethods())
+        app.onerror = (err) => console.info(err.message)
         let koaServer = http.createServer(app.callback())
         koaServer.listen(9035)
-        koaServer.on('error',(e)=>{console.error(e.message)})
+        koaServer.on('error', (e) => { console.error(e.message) })
         ac.signal.addEventListener('abort', () => { koaServer.close() })
         await sleep(1000)
 
@@ -361,7 +363,7 @@ test('backpressure-socket', async () => {
             })
         })
 
-        console.info(`${'\n'.repeat(10)}sendSize:${formatSize(sendSize)} sendWriteSize:${formatSize(sendWriteSize)} receiveSize:${formatSize(receiveSize)} transformSize:${formatSize(transformSize)}`)
+        console.info(`${'\n'.repeat(3)}sendSize:${formatSize(sendSize)} sendWriteSize:${formatSize(sendWriteSize)} receiveSize:${formatSize(receiveSize)} transformSize:${formatSize(transformSize)}`)
 
         console.info('tcp透传测试 finish sendSize:', sendSize)
 
@@ -394,6 +396,7 @@ test('test-server', { skip: SKIP_MANAUAL_TEST }, async () => {
         })
         app.use(router.routes())
         app.use(router.allowedMethods())
+        app.onerror = (err) => console.info(err.message)
         let koaServer = http.createServer(app.callback())
         koaServer.listen(9035)
         ac.signal.addEventListener('abort', () => { koaServer.close() })
