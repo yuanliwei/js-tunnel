@@ -1,5 +1,5 @@
 {
-  "name": "js-tunnel",
+  "name": "js-tcp-tunnel",
   "version": "1.0.0",
   "description": "js tcp tunnel",
   "main": "index.js",
