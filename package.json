@@ -1,0 +1,32 @@
+{
+  "name": "js-tunnel",
+  "version": "1.0.0",
+  "description": "js tcp tunnel",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/yuanliwei/js-tunnel.git"
+  },
+  "keywords": [
+    "tcp",
+    "tunnel",
+    "http",
+    "websocket"
+  ],
+  "author": "yuanliwei",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yuanliwei/js-tunnel/issues"
+  },
+  "homepage": "https://github.com/yuanliwei/js-tunnel#readme",
+  "devDependencies": {
+    "@types/node": "^22.9.4",
+    "koa": "^2.15.3",
+    "koa-router": "^13.0.1",
+    "ws": "^8.18.0"
+  }
+}
