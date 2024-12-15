@@ -1518,11 +1518,9 @@ export function createTunnelTcpClientHttp(param) {
                 },
             })
             param.oncreateoutconnect && param.oncreateoutconnect()
-            await res.body.pipeTo(new WritableStream({
-                async write(chunk) {
-                    await helper.writer.write(chunk)
-                }
-            }))
+            for await (const chunk of res.body) {
+                await helper.writer.write(chunk)
+            }
         } finally {
             abortListenerSet.delete(listenerAC)
         }
