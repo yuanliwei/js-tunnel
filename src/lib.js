@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import net from 'node:net'
 import { Readable, Writable } from 'node:stream'
+import http from 'node:http'
+import https from 'node:https'
 
 /**
  * @import {WebSocketServer} from 'ws'
@@ -1406,7 +1408,7 @@ export function createTunnelTcpServerKoaRouter(param) {
         helper.writer = helper.writable.getWriter()
         helper.reader = helper.readable.getReader()
         ctx.req.on('error', (e) => { console.error('createTunnelTcpServerKoaRouter in req error', e.message) })
-        await Readable.toWeb(ctx.req).pipeTo(new WritableStream({
+        Readable.toWeb(ctx.req).pipeTo(new WritableStream({
             async write(chunk) {
                 await helper.writer.write(chunk)
             }
@@ -1427,6 +1429,19 @@ export function createTunnelTcpServerKoaRouter(param) {
             }
         })).on('error', (err) => { console.error('web stream error', err.message) })
     })
+}
+
+/**
+ * @param {string} url 
+ * @returns {http}
+ */
+export function getHttpx(url) {
+    /** @type{*} */
+    let httpx = http
+    if (url.startsWith('https:')) {
+        httpx = https
+    }
+    return httpx
 }
 
 /**
@@ -1467,70 +1482,61 @@ export function createTunnelTcpClientHttp(param) {
     param.signal.addEventListener('abort', () => {
         abortListenerSet.forEach(o => o())
     })
-    async function createConnectionIn() {
-        console.info('createTunnelTcpClientHttp createConnectionIn')
+    async function createConnectionHttpx() {
+        console.info('createTunnelTcpClientHttpV2 createConnectionHttpx')
         let addHeaders = {}
         if (param.headersFn) {
             addHeaders = await param.headersFn()
         }
         const ac = new AbortController()
         const listenerAC = () => { ac.abort() }
-        try {
-            let transform = new TransformStream()
-            socketWriter = transform.writable.getWriter()
-            signal.resolve()
-            abortListenerSet.add(listenerAC)
-            await fetch(param.url, {
-                method: 'POST',
-                // @ts-ignore
-                duplex: 'half',
-                signal: ac.signal,
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    ...addHeaders,
-                },
-                body: transform.readable,
-            })
-        } finally {
-            abortListenerSet.delete(listenerAC)
-            socketWriter = null
-            signal.resolve()
-            signal = Promise_withResolvers()
-        }
-    }
-
-    async function createConnectionOut() {
-        console.info('createTunnelTcpClientHttp createConnectionOut')
-        let addHeaders = {}
-        if (param.headersFn) {
-            addHeaders = await param.headersFn()
-        }
-        const ac = new AbortController()
-        const listenerAC = () => { ac.abort() }
-        try {
-            abortListenerSet.add(listenerAC)
-            let res = await fetch(param.url, {
-                method: 'POST',
-                signal: ac.signal,
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    ...addHeaders,
-                },
-            })
+        let promise = Promise_withResolvers()
+        let transform = new TransformStream()
+        socketWriter = transform.writable.getWriter()
+        signal.resolve()
+        abortListenerSet.add(listenerAC)
+        let httpx = getHttpx(param.url)
+        let req = httpx.request(param.url, {
+            method: 'POST',
+            signal: ac.signal,
+            timeout: param.timeout ?? 24 * 3600 * 1000,
+        }, (res) => {
             param.oncreateoutconnect && param.oncreateoutconnect()
-            for await (const chunk of res.body) {
-                await helper.writer.write(chunk)
-            }
-        } finally {
-            abortListenerSet.delete(listenerAC)
-        }
+            Readable.toWeb(res).pipeTo(new WritableStream({
+                async write(chunk) {
+                    await helper.writer.write(chunk)
+                }
+            })).catch((err) => {
+                console.error('web stream error', err.message)
+            })
+            res.on('error', (e) => {
+                console.error('createConnectionHttpx res error ', e.message)
+                promise.resolve()
+            })
+            res.on('close', () => {
+                console.error('createConnectionHttpx res close ')
+                promise.resolve()
+            })
+        })
+        Readable.fromWeb(transform.readable).pipe(req)
+        req.flushHeaders()
+        req.on('error', (e) => {
+            console.error('createConnectionHttpx', e.message)
+            promise.resolve()
+        })
+        req.on('close', () => {
+            console.error('createConnectionHttpx req close')
+            promise.resolve()
+        })
+        await promise.promise
+        abortListenerSet.delete(listenerAC)
+        socketWriter = null
+        signal.resolve()
+        signal = Promise_withResolvers()
     }
 
     timeWaitRetryLoop(param.signal, async () => {
-        await createConnectionIn()
-    })
-    timeWaitRetryLoop(param.signal, async () => {
-        await createConnectionOut()
+        await createConnectionHttpx()
     })
 
     return helper
