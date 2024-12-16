@@ -1500,6 +1500,10 @@ export function createTunnelTcpClientHttp(param) {
             method: 'POST',
             signal: ac.signal,
             timeout: param.timeout ?? 24 * 3600 * 1000,
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                ...addHeaders,
+            },
         }, (res) => {
             param.oncreateoutconnect && param.oncreateoutconnect()
             Readable.toWeb(res).pipeTo(new WritableStream({

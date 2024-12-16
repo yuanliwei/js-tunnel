@@ -1,6 +1,6 @@
 {
   "name": "js-tcp-tunnel",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "js tcp tunnel",
   "main": "index.js",
   "type": "module",
