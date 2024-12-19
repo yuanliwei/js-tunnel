@@ -9,7 +9,7 @@ import https from 'node:https'
  * @import Router from 'koa-router'
  */
 
-const DEBUG_TUNNEL_TCP = false
+const DEBUG_TUNNEL_TCP = true
 const TUNNEL_TCP_WITH_CRYPTO = true
 const TUNNEL_TCP_TIME_BUFFERED = false
 // const TUNNEL_TCP_QUEUE_SIZE = 15
@@ -626,6 +626,7 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
     }
     let [clientKey, clientIv] = channel.key_iv
     let bufferedTransform = createTimeBufferedTransformStream(50)
+    let closeSignal = Promise_withResolvers()
     Readable.toWeb(socket).pipeThrough(bufferedTransform).pipeTo(new WritableStream({
         async write(chunk) {
             const buffer = await encrypt(chunk, clientKey, clientIv)
@@ -657,12 +658,13 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
                 dstChannel: channel.dstChannel,
                 buffer: new Uint8Array(0),
             })).catch((err) => { console.error('web stream write error', err.message) })
+            closeSignal.resolve()
         }
     })).catch((err) => {
         console.error('web stream error', err.message)
     })
-    socket.on('close', async() => {
-        await signal.promise
+    socket.on('close', async () => {
+        await closeSignal.promise
         encodeWriter.write(buildTcpTunnelData({
             type: TUNNEL_TCP_TYPE_CLOSE,
             srcId: channel.srcId,
