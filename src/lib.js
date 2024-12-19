@@ -9,7 +9,7 @@ import https from 'node:https'
  * @import Router from 'koa-router'
  */
 
-const DEBUG_TUNNEL_TCP = true
+const DEBUG_TUNNEL_TCP = false
 const TUNNEL_TCP_WITH_CRYPTO = true
 const TUNNEL_TCP_TIME_BUFFERED = false
 // const TUNNEL_TCP_QUEUE_SIZE = 15
@@ -303,17 +303,18 @@ let tcpTunnelDataSend = 0
  */
 export function printTcpTunnelData(data) {
     return `id: ${`${data.srcId}:${data.dstId}`.padEnd(10)} channel: ${`${data.srcChannel}:${data.dstChannel}`.padEnd(10)} ${{
-        0xa9b398d5: 'TUNNEL_TCP_TYPE_INIT      ',
-        0xe41957d3: 'TUNNEL_TCP_TYPE_LISTEN    ',
-        0x20993e38: 'TUNNEL_TCP_TYPE_ONLISTEN  ',
-        0x11d949f8: 'TUNNEL_TCP_TYPE_CONNECT   ',
-        0x377b2181: 'TUNNEL_TCP_TYPE_ONCONNECT ',
-        0x48678f39: 'TUNNEL_TCP_TYPE_DATA      ',
-        0x8117f762: 'TUNNEL_TCP_TYPE_ERROR     ',
-        0x72fd6470: 'TUNNEL_TCP_TYPE_CLOSE     ',
-        0x4768e1ba: 'TUNNEL_TCP_TYPE_PING      ',
-        0x106f43fb: 'TUNNEL_TCP_TYPE_PONG      ',
-        0xc5870539: 'TUNNEL_TCP_TYPE_ACK       ',
+        [TUNNEL_TCP_TYPE_INIT]:       'TUNNEL_TCP_TYPE_INIT      ',
+        [TUNNEL_TCP_TYPE_LISTEN]:     'TUNNEL_TCP_TYPE_LISTEN    ',
+        [TUNNEL_TCP_TYPE_ONLISTEN]:   'TUNNEL_TCP_TYPE_ONLISTEN  ',
+        [TUNNEL_TCP_TYPE_CONNECT]:    'TUNNEL_TCP_TYPE_CONNECT   ',
+        [TUNNEL_TCP_TYPE_ONCONNECT]:  'TUNNEL_TCP_TYPE_ONCONNECT ',
+        [TUNNEL_TCP_TYPE_DATA]:       'TUNNEL_TCP_TYPE_DATA      ',
+        [TUNNEL_TCP_TYPE_ERROR]:      'TUNNEL_TCP_TYPE_ERROR     ',
+        [TUNNEL_TCP_TYPE_CLOSE]:      'TUNNEL_TCP_TYPE_CLOSE     ',
+        [TUNNEL_TCP_TYPE_END]:        'TUNNEL_TCP_TYPE_END       ',
+        [TUNNEL_TCP_TYPE_PING]:       'TUNNEL_TCP_TYPE_PING      ',
+        [TUNNEL_TCP_TYPE_PONG]:       'TUNNEL_TCP_TYPE_PONG      ',
+        [TUNNEL_TCP_TYPE_ACK]:        'TUNNEL_TCP_TYPE_ACK       ',
     }[data.type]} recv: ${(tcpTunnelDataRecv)} send: ${(tcpTunnelDataSend)} size:${data.buffer.length}`
 }
 
