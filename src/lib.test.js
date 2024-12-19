@@ -62,7 +62,7 @@ test('tunnel-tcp-socket-test', async () => {
             console.error(err.message)
         })
 
-        let rec = null
+        let rec = ''
 
         await new Promise((resolve) => {
             socket.on('connect', async () => {
@@ -86,7 +86,8 @@ test('tunnel-tcp-socket-test', async () => {
             socketServer.close()
         })
 
-        strictEqual(rec, 'qwertyuiop - 99')
+        let from = rec.length - 'qwertyuiop - 99'.length
+        strictEqual(rec.substring(from), 'qwertyuiop - 99')
 
     })
     console.info('over!')

@@ -424,6 +424,7 @@ export const TUNNEL_TCP_TYPE_ONCONNECT = 0x377b2181
 export const TUNNEL_TCP_TYPE_DATA = 0x48678f39
 export const TUNNEL_TCP_TYPE_ERROR = 0x8117f762
 export const TUNNEL_TCP_TYPE_CLOSE = 0x72fd6470
+export const TUNNEL_TCP_TYPE_END = 0xe8b97027
 export const TUNNEL_TCP_TYPE_PING = 0x4768e1ba
 export const TUNNEL_TCP_TYPE_PONG = 0x106f43fb
 export const TUNNEL_TCP_TYPE_ACK = 0xc5870539
@@ -437,6 +438,7 @@ export const TUNNEL_TCP_TYPE_ACK = 0xc5870539
  * |TUNNEL_TCP_TYPE_DATA
  * |TUNNEL_TCP_TYPE_ERROR
  * |TUNNEL_TCP_TYPE_CLOSE
+ * |TUNNEL_TCP_TYPE_END
  * |TUNNEL_TCP_TYPE_PING
  * |TUNNEL_TCP_TYPE_PONG
  * |TUNNEL_TCP_TYPE_ACK} TUNNEL_TCP_TYPE
@@ -648,17 +650,28 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
         },
         async close() {
             await encodeWriter.write(buildTcpTunnelData({
-                type: TUNNEL_TCP_TYPE_CLOSE,
+                type: TUNNEL_TCP_TYPE_END,
                 srcId: channel.srcId,
                 srcChannel: channel.srcChannel,
                 dstId: channel.dstId,
                 dstChannel: channel.dstChannel,
                 buffer: new Uint8Array(0),
             })).catch((err) => { console.error('web stream write error', err.message) })
-            channelMap.delete(channelId)
         }
     })).catch((err) => {
         console.error('web stream error', err.message)
+    })
+    socket.on('close', async() => {
+        await signal.promise
+        encodeWriter.write(buildTcpTunnelData({
+            type: TUNNEL_TCP_TYPE_CLOSE,
+            srcId: channel.srcId,
+            srcChannel: channel.srcChannel,
+            dstId: channel.dstId,
+            dstChannel: channel.dstChannel,
+            buffer: new Uint8Array(0),
+        })).catch((err) => { console.error('web stream write error', err.message) })
+        channelMap.delete(channelId)
     })
     socket.on('error', (err) => {
         console.error('pipeSocketDataWithChannel on error ', err.message)
@@ -846,6 +859,13 @@ async function dispatchClientBufferData(param, setup, listenKeyParamMap, channel
         let channel = channelMap.get(channelId)
         if (channel) {
             channelMap.delete(channelId)
+            channel.socket.destroy()
+        }
+    }
+    if (data.type == TUNNEL_TCP_TYPE_END) {
+        let channelId = data.dstChannel
+        let channel = channelMap.get(channelId)
+        if (channel) {
             channel.socket.end()
         }
     }
