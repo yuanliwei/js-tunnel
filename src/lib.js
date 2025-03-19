@@ -3,6 +3,7 @@ import net from 'node:net'
 import { Readable, Writable } from 'node:stream'
 import http from 'node:http'
 import https from 'node:https'
+import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web'
 
 /**
  * @import {WebSocketServer} from 'ws'
@@ -303,17 +304,17 @@ let tcpTunnelDataSend = 0
  */
 export function printTcpTunnelData(data) {
     return `id: ${`${data.srcId}:${data.dstId}`.padEnd(10)} channel: ${`${data.srcChannel}:${data.dstChannel}`.padEnd(10)} ${{
-        [TUNNEL_TCP_TYPE_INIT]:       'TUNNEL_TCP_TYPE_INIT      ',
-        [TUNNEL_TCP_TYPE_LISTEN]:     'TUNNEL_TCP_TYPE_LISTEN    ',
-        [TUNNEL_TCP_TYPE_ONLISTEN]:   'TUNNEL_TCP_TYPE_ONLISTEN  ',
-        [TUNNEL_TCP_TYPE_CONNECT]:    'TUNNEL_TCP_TYPE_CONNECT   ',
-        [TUNNEL_TCP_TYPE_ONCONNECT]:  'TUNNEL_TCP_TYPE_ONCONNECT ',
-        [TUNNEL_TCP_TYPE_DATA]:       'TUNNEL_TCP_TYPE_DATA      ',
-        [TUNNEL_TCP_TYPE_ERROR]:      'TUNNEL_TCP_TYPE_ERROR     ',
-        [TUNNEL_TCP_TYPE_CLOSE]:      'TUNNEL_TCP_TYPE_CLOSE     ',
-        [TUNNEL_TCP_TYPE_PING]:       'TUNNEL_TCP_TYPE_PING      ',
-        [TUNNEL_TCP_TYPE_PONG]:       'TUNNEL_TCP_TYPE_PONG      ',
-        [TUNNEL_TCP_TYPE_ACK]:        'TUNNEL_TCP_TYPE_ACK       ',
+        [TUNNEL_TCP_TYPE_INIT]: 'TUNNEL_TCP_TYPE_INIT      ',
+        [TUNNEL_TCP_TYPE_LISTEN]: 'TUNNEL_TCP_TYPE_LISTEN    ',
+        [TUNNEL_TCP_TYPE_ONLISTEN]: 'TUNNEL_TCP_TYPE_ONLISTEN  ',
+        [TUNNEL_TCP_TYPE_CONNECT]: 'TUNNEL_TCP_TYPE_CONNECT   ',
+        [TUNNEL_TCP_TYPE_ONCONNECT]: 'TUNNEL_TCP_TYPE_ONCONNECT ',
+        [TUNNEL_TCP_TYPE_DATA]: 'TUNNEL_TCP_TYPE_DATA      ',
+        [TUNNEL_TCP_TYPE_ERROR]: 'TUNNEL_TCP_TYPE_ERROR     ',
+        [TUNNEL_TCP_TYPE_CLOSE]: 'TUNNEL_TCP_TYPE_CLOSE     ',
+        [TUNNEL_TCP_TYPE_PING]: 'TUNNEL_TCP_TYPE_PING      ',
+        [TUNNEL_TCP_TYPE_PONG]: 'TUNNEL_TCP_TYPE_PONG      ',
+        [TUNNEL_TCP_TYPE_ACK]: 'TUNNEL_TCP_TYPE_ACK       ',
     }[data.type]} recv: ${(tcpTunnelDataRecv)} send: ${(tcpTunnelDataSend)} size:${data.buffer.length}`
 }
 
