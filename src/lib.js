@@ -492,6 +492,7 @@ export const TUNNEL_TCP_TYPE_ACK = 0xc5870539
  *     writable:WritableStream<Uint8Array>;
  *     reader:ReadableStreamDefaultReader<Uint8Array>;
  *     writer:WritableStreamDefaultWriter<Uint8Array>;
+ *     param: TunnelTcpClientHelperParam;
  *     listen:(param:{ 
  *          clientKey?:string;
  *          tunnelKey:string;
@@ -1145,7 +1146,7 @@ export function createTunnelTcpClientHelper(param) {
     }
 
     /** @type{TUNNEL_TCP_CLIENT_HELPER} */
-    let helper = { readable: encode.readable, writable: decode.writable, reader: null, writer: null, listen, connect }
+    let helper = { readable: encode.readable, writable: decode.writable, reader: null, writer: null, listen, connect, param: outParam }
     return helper
 
 }
@@ -1522,6 +1523,11 @@ export function createTunnelTcpClientHttp(param) {
                 console.error('createConnectionHttpx res close ')
                 promise.resolve()
             })
+            setTimeout(() => {
+                if (helper.param.clientDataId < 1) {
+                    res.destroy(new Error('init clientId failed!'))
+                }
+            }, 10_000).unref()
         })
         Readable.fromWeb(transform.readable).pipe(req)
         req.flushHeaders()
