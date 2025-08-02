@@ -8,6 +8,7 @@ import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web
 /**
  * @import {WebSocketServer} from 'ws'
  * @import Router from 'koa-router'
+ * @import {SocketChannel, TCP_TUNNEL_DATA, TUNNEL_TCP_CLIENT_HELPER, TUNNEL_TCP_DATA_CONNECT, TUNNEL_TCP_DATA_LISTEN, TUNNEL_TCP_DATA_PINGPONG, TUNNEL_TCP_SERVER_HELPER, TunnelTcpClientHelperParam, TunnelTcpServerHelperParam} from './types.js'
  */
 
 const DEBUG_TUNNEL_TCP = false
@@ -53,14 +54,6 @@ export function formatSize(size) {
 export function formatNumber(num) {
     return Number(num.toFixed(2))
 }
-
-/**
- * @typedef {{
- * promise: Promise<any>;
- * resolve: (value: any | null) => void;
- * reject: (reason: any | null) => void;
- * }} PromiseResolvers
- */
 
 export function Promise_withResolvers() {
     /** @type{(value?:object)=>void} */
@@ -428,84 +421,6 @@ export const TUNNEL_TCP_TYPE_CLOSE = 0x72fd6470
 export const TUNNEL_TCP_TYPE_PING = 0x4768e1ba
 export const TUNNEL_TCP_TYPE_PONG = 0x106f43fb
 export const TUNNEL_TCP_TYPE_ACK = 0xc5870539
-
-/**
- * @typedef {TUNNEL_TCP_TYPE_INIT
- * |TUNNEL_TCP_TYPE_LISTEN
- * |TUNNEL_TCP_TYPE_ONLISTEN
- * |TUNNEL_TCP_TYPE_CONNECT
- * |TUNNEL_TCP_TYPE_ONCONNECT
- * |TUNNEL_TCP_TYPE_DATA
- * |TUNNEL_TCP_TYPE_ERROR
- * |TUNNEL_TCP_TYPE_CLOSE
- * |TUNNEL_TCP_TYPE_PING
- * |TUNNEL_TCP_TYPE_PONG
- * |TUNNEL_TCP_TYPE_ACK} TUNNEL_TCP_TYPE
- */
-
-/**
- * @typedef {{
- * type:TUNNEL_TCP_TYPE;
- * srcId:number;
- * dstId:number;
- * srcChannel:number;
- * dstChannel:number;
- * buffer:Uint8Array;
- * }} TCP_TUNNEL_DATA
- */
-
-/**
- * @typedef {{
- * key:string;
- * }} TUNNEL_TCP_DATA_LISTEN
- */
-
-/**
- * @typedef {{
- * key:string;
- * }} TUNNEL_TCP_DATA_CONNECT
- */
-
-/**
- * @typedef {{
- * time:number;
- * }} TUNNEL_TCP_DATA_PINGPONG
- */
-
-/**
- * @typedef {{
- * id:number;
- * encodeWriter:WritableStreamDefaultWriter<Uint8Array>;
- * }} TUNNEL_TCP_SERVER
- */
-
-/**
- * @typedef {{
- *     readable:ReadableStream<Uint8Array>;
- *     writable:WritableStream<Uint8Array>;
- *     reader:ReadableStreamDefaultReader<Uint8Array>;
- *     writer:WritableStreamDefaultWriter<Uint8Array>;
- *     dstId:number;
- * }} TUNNEL_TCP_SERVER_HELPER
- * @typedef {{
- *     readable:ReadableStream<Uint8Array>;
- *     writable:WritableStream<Uint8Array>;
- *     reader:ReadableStreamDefaultReader<Uint8Array>;
- *     writer:WritableStreamDefaultWriter<Uint8Array>;
- *     param: TunnelTcpClientHelperParam;
- *     listen:(param:{ 
- *          clientKey?:string;
- *          tunnelKey:string;
- *          host?:string;
- *          port:number; 
- *        })=>Promise<void>;
- *     connect:(param:{ 
- *          clientKey?:string;
- *          tunnelKey: string;
- *          port: number;
- *        })=>Promise<void>;
- * }} TUNNEL_TCP_CLIENT_HELPER
- */
 
 /**
  * @param {TCP_TUNNEL_DATA} box
@@ -924,39 +839,6 @@ export async function closeRemoteChannel(encodeWriter, data) {
         buffer: new Uint8Array(0),
     })).catch((err) => { console.error('closeRemoteChannel stream write error', err.message) })
 }
-
-/**
- * @typedef {{
- * writer:WritableStreamDefaultWriter<Uint8Array>;
- * socket:net.Socket;
- * srcId:number;
- * dstId:number;
- * srcChannel:number;
- * dstChannel:number;
- * notify:(size:number)=>void;
- * recvPackSize:number;
- * key_iv:[CryptoKey, Uint8Array];
- * }} SocketChannel
- */
-
-
-/**
- * @typedef {{
- * uniqueId:number;
- * listenMap:Map<string,number>;
- * dstMap:Map<number,TUNNEL_TCP_SERVER>;
- * serverKey?:string;
- * }} TunnelTcpServerHelperParam
- */
-
-/**
- * @typedef {{
- * signal:AbortSignal;
- * serverKey?:string;
- * uniqueId:number;
- * clientDataId:number;
- * }} TunnelTcpClientHelperParam 
- */
 
 /**
  * @param {TunnelTcpServerHelperParam} param 
