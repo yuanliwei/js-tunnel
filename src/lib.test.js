@@ -5,7 +5,7 @@ import net from 'net'
 import http from 'http'
 import { Readable, Transform } from 'node:stream'
 import Koa from 'koa'
-import Router from 'koa-router'
+import Router from '@koa/router'
 import { WebSocketServer } from 'ws'
 import log4js from 'log4js'
 
@@ -509,4 +509,144 @@ test('test-connect', { skip: SKIP_MANAUAL_TEST }, async () => {
 
         await sleep(10000_000)
     })
+})
+
+test('terminal-server', async () => {
+    // node --test-name-pattern="^terminal-server$" src/lib.test.js
+    using stack = new DisposableStack()
+    const ac = new AbortController()
+    stack.adopt(ac, () => { ac.abort() })
+    let transformSize = 0
+
+    async function createEchoServer() {
+        console.info('创建socket服务')
+        let socketServer = net.createServer((socket) => {
+            socket.pipe(new Transform({
+                transform(chunk, _, callback) {
+                    // console.info('transform chunk', chunk.length)
+                    transformSize += chunk.length
+                    this.push("echo::::")
+                    this.push(chunk)
+                    callback()
+                }
+            })).pipe(socket).on('error', (err) => console.error(err.message))
+        }).listen(9036)
+        await sleep(100)
+        socketServer.on('error', (err) => {
+            console.error(err.message)
+        })
+        ac.signal.addEventListener('abort', () => {
+            socketServer.close()
+        })
+    }
+
+    /**
+     * 
+     * @param {AbortController} ac 
+     */
+    async function createDispatchServer(ac) {
+        console.info('创建转发服务 http')
+        let app = new Koa()
+        let router = new Router()
+        createTunnelTcpServerKoaRouter({
+            signal: ac.signal,
+            router: router,
+            path: '/tunnel/0f7c5b2c9080eaa9e4d6139126daac04',
+            serverKey: '2934c57f790f9e99a52a121802df231c',
+        })
+        app.use(router.routes())
+        app.use(router.allowedMethods())
+        app.onerror = (err) => console.info(err.message)
+        let koaServer = http.createServer(app.callback())
+        koaServer.listen(9035)
+        koaServer.on('error', (e) => { console.error(e.message) })
+        ac.signal.addEventListener('abort', () => {
+            console.info('close koa server')
+            koaServer.close((err) => {
+                console.info('on server close result ', err)
+            })
+            koaServer.closeAllConnections()
+        })
+        await sleep(1000)
+    }
+
+    async function createListenClient() {
+        console.info('创建监听服务 http')
+        let connection1 = createTunnelTcpClientHttp({
+            url: 'http://127.0.0.1:9035/tunnel/0f7c5b2c9080eaa9e4d6139126daac04',
+            signal: ac.signal,
+            serverKey: '2934c57f790f9e99a52a121802df231c',
+        })
+        connection1.listen({
+            clientKey: 'mmm',
+            tunnelKey: 'b0f5014acad2060d6bd3730a1721c97f',
+            host: '127.0.0.1',
+            port: 9036,
+        })
+        await sleep(100)
+    }
+
+    async function createConnectClient() {
+        console.info('创建连接服务 http 1')
+        let connection2 = createTunnelTcpClientHttp({
+            url: 'http://127.0.0.1:9035/tunnel/0f7c5b2c9080eaa9e4d6139126daac04',
+            signal: ac.signal,
+            serverKey: '2934c57f790f9e99a52a121802df231c',
+        })
+        connection2.connect({
+            clientKey: 'mmm',
+            tunnelKey: 'b0f5014acad2060d6bd3730a1721c97f',
+            port: 9037,
+        })
+
+        await sleep(1000)
+    }
+
+    let socketCreateCount = 0
+    let recvCount = 0
+    async function startSendRecvTest() {
+        socketCreateCount++
+        console.info('tcp透传测试 start')
+        let socket1 = net.createConnection({ host: '127.0.0.1', port: 9037 })
+        socket1.on('error', (err) => { console.error(err.message) })
+        ac.signal.addEventListener('abort', () => { socket1.destroy() })
+        socket1.on('connect', async () => {
+            socket1.on('data', (chunk) => {
+                console.info('receive chunk ', Uint8Array_toString(chunk))
+                recvCount++
+            })
+            while (!ac.signal.aborted && !socket1.closed) {
+                await sleep(1000)
+                socket1.write(`iiiiiii>>>>>>> ${new Date().toLocaleString()}`)
+            }
+            console.info('finished socket.')
+            setTimeout(() => {
+                startSendRecvTest()
+            }, 1)
+        })
+    }
+
+    await createEchoServer()
+    let ac2 = new AbortController()
+    stack.adopt(0, () => ac2.abort())
+    await createDispatchServer(ac2)
+    await createListenClient()
+    await createConnectClient()
+    await startSendRecvTest()
+
+    await sleep(5000)
+    ac2.abort()
+    console.info('stop dispatch server')
+    await sleep(5_000)
+    ac2 = new AbortController()
+    stack.adopt(0, () => ac2.abort())
+    console.info('recreate dispatch server')
+    await createDispatchServer(ac2)
+
+    await sleep(20_000)
+
+    strictEqual(socketCreateCount, 2)
+    strictEqual(recvCount, 14)
+
+    console.info('over!')
 })

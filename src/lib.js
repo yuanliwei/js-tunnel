@@ -7,7 +7,7 @@ import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web
 
 /**
  * @import {WebSocketServer} from 'ws'
- * @import Router from 'koa-router'
+ * @import Router from '@koa/router'
  * @import {SocketChannel, TCP_TUNNEL_DATA, TUNNEL_TCP_CLIENT_HELPER, TUNNEL_TCP_DATA_CONNECT, TUNNEL_TCP_DATA_LISTEN, TUNNEL_TCP_DATA_PINGPONG, TUNNEL_TCP_SERVER_HELPER, TunnelTcpClientHelperParam, TunnelTcpServerHelperParam} from './types.js'
  */
 
@@ -68,8 +68,8 @@ export function Promise_withResolvers() {
 }
 
 /**
- * @param {Promise<[CryptoKey,Uint8Array]>} key_iv
- * @returns {TransformStream<Uint8Array, Uint8Array>}
+ * @param {Promise<[CryptoKey,Uint8Array<ArrayBuffer>]>} key_iv
+ * @returns {TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>}
  */
 export function createEncodeStream(key_iv) {
     let key = null
@@ -86,8 +86,8 @@ export function createEncodeStream(key_iv) {
 }
 
 /**
- * @param {Promise<[CryptoKey,Uint8Array]>} key_iv
- * @returns {TransformStream<Uint8Array, Uint8Array>}
+ * @param {Promise<[CryptoKey,Uint8Array<ArrayBuffer>]>} key_iv
+ * @returns {TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>}
  */
 export function createDecodeStream(key_iv) {
     let key = null
@@ -110,10 +110,10 @@ export function createDecodeStream(key_iv) {
 const HEADER_CHECK = 0xb1f7705f
 
 /**
- * @param {Uint8Array[]} queue
+ * @param {Uint8Array<ArrayBuffer>[]} queue
  * @param {CryptoKey} key
- * @param {Uint8Array} iv
- * @returns {Promise<Uint8Array>}
+ * @param {Uint8Array<ArrayBuffer>} iv
+ * @returns {Promise<Uint8Array<ArrayBuffer>>}
  */
 export async function buildBufferData(queue, key, iv) {
     let buffers = []
@@ -132,11 +132,11 @@ export async function buildBufferData(queue, key, iv) {
 /**
  * @param {Uint8Array<ArrayBuffer>} buffer
  * @param {CryptoKey} key
- * @param {Uint8Array} iv
- * @returns {Promise<[Uint8Array[],Uint8Array<ArrayBuffer>]>}
+ * @param {Uint8Array<ArrayBuffer>} iv
+ * @returns {Promise<[Uint8Array<ArrayBuffer>[],Uint8Array<ArrayBuffer>]>}
  */
 export async function parseBufferData(buffer, key, iv) {
-    /** @type{Uint8Array[]} */
+    /** @type{Uint8Array<ArrayBuffer>[]} */
     let queue = []
     let offset = 0
     let remain = new Uint8Array(0)
@@ -315,7 +315,7 @@ export function printTcpTunnelData(data) {
  * 
  * @param {string} password 
  * @param {number} iterations 
- * @returns {Promise<[CryptoKey,Uint8Array]>}
+ * @returns {Promise<[CryptoKey,Uint8Array<ArrayBuffer>]>}
  */
 export async function buildKeyIv(password, iterations) {
     if (!TUNNEL_TCP_WITH_CRYPTO) return [null, null]
@@ -351,9 +351,9 @@ export async function buildKeyIv(password, iterations) {
 
 /**
  * 
- * @param {Uint8Array} data 
+ * @param {Uint8Array<ArrayBuffer>} data 
  * @param {CryptoKey} key 
- * @param {Uint8Array} iv 
+ * @param {Uint8Array<ArrayBuffer>} iv 
  * @returns 
  */
 export async function encrypt(data, key, iv) {
@@ -366,9 +366,9 @@ export async function encrypt(data, key, iv) {
 }
 
 /**
- * @param {Uint8Array} data 
+ * @param {Uint8Array<ArrayBuffer>} data 
  * @param {CryptoKey} key 
- * @param {Uint8Array} iv 
+ * @param {Uint8Array<ArrayBuffer>} iv 
  * @returns 
  */
 export async function decrypt(data, key, iv) {
@@ -437,7 +437,7 @@ export function buildTcpTunnelData(box) {
 }
 
 /**
- * @param {Uint8Array} buffer
+ * @param {Uint8Array<ArrayBuffer>} buffer
  */
 export function parseTcpTunnelData(buffer) {
     let offset = 0
@@ -534,25 +534,43 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
     let signal = Promise_withResolvers()
     signal.resolve()
     let sendPackSize = 0
-    let recvPackSize = 0
+    let remoteRecvPackSize = 0
     channel.notify = (size) => {
-        recvPackSize = size
+        remoteRecvPackSize = size
         signal.resolve()
     }
     let [clientKey, clientIv] = channel.key_iv
     let bufferedTransform = createTimeBufferedTransformStream(50)
+    let backPressureTimer = null
     Readable.toWeb(socket).pipeThrough(bufferedTransform).pipeTo(new WritableStream({
+        /**
+         * @param {Uint8Array<ArrayBuffer>} chunk
+         */
         async write(chunk) {
             const buffer = await encrypt(chunk, clientKey, clientIv)
-            let bufferPackSize = sendPackSize - recvPackSize
+            let bufferPackSize = sendPackSize - remoteRecvPackSize
+            if (DEBUG_TUNNEL_TCP) {
+                console.warn('bufferPackSize:', bufferPackSize)
+            }
             if (bufferPackSize > 10) {
                 signal.resolve()
                 signal = Promise_withResolvers()
+                const s = signal
+                backPressureTimer = setTimeout(() => {
+                    s.resolve()
+                    console.error('pipeSocketDataWithChannel timeout close channel')
+                    sendPackSize = 0
+                    this.close()
+                }, 10_000).unref()
                 if (DEBUG_TUNNEL_TCP) {
-                    console.info('stop wait signal', ' sendPackSize:', sendPackSize, ' recvPackSize:', recvPackSize, ' bufferPackSize:', bufferPackSize)
+                    console.info('stop wait signal', ' sendPackSize:', sendPackSize, ' recvPackSize:', remoteRecvPackSize, ' bufferPackSize:', bufferPackSize)
                 }
             }
             await signal.promise
+            if (backPressureTimer) {
+                clearTimeout(backPressureTimer)
+                backPressureTimer = null
+            }
             await encodeWriter.write(buildTcpTunnelData({
                 type: TUNNEL_TCP_TYPE_DATA,
                 srcId: channel.srcId,
@@ -573,6 +591,7 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
                 buffer: new Uint8Array(0),
             })).catch((err) => { console.error('web stream write error', err.message) })
             channelMap.delete(channelId)
+            socket.destroy()
         }
     })).catch((err) => {
         console.error('web stream error', err.message)
@@ -611,8 +630,8 @@ function natTunnelData(param, data) {
 
 /**
  * @param {TunnelTcpServerHelperParam} param
- * @param {WritableStreamDefaultWriter<Uint8Array<ArrayBufferLike>>} encodeWriter
- * @param {Uint8Array<ArrayBufferLike>} chunk
+ * @param {WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>} encodeWriter
+ * @param {Uint8Array<ArrayBuffer>} chunk
  */
 async function dispatchServerBufferData(param, encodeWriter, chunk) {
     let data = parseTcpTunnelData(chunk)
@@ -658,10 +677,10 @@ async function dispatchServerBufferData(param, encodeWriter, chunk) {
 /**
  * @param {TunnelTcpClientHelperParam} param
  * @param {{ (): Promise<void>; }} setup
- * @param {Map<string,{host:string;port:number;key_iv:[CryptoKey, Uint8Array]}>} listenKeyParamMap
+ * @param {Map<string,{host:string;port:number;key_iv:[CryptoKey, Uint8Array<ArrayBuffer>]}>} listenKeyParamMap
  * @param {Map<number, SocketChannel>} channelMap
- * @param {WritableStreamDefaultWriter<Uint8Array<ArrayBufferLike>>} encodeWriter
- * @param {Uint8Array<ArrayBufferLike>} buffer
+ * @param {WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>} encodeWriter
+ * @param {Uint8Array<ArrayBuffer>} buffer
  */
 async function dispatchClientBufferData(param, setup, listenKeyParamMap, channelMap, encodeWriter, buffer) {
     let data = parseTcpTunnelData(buffer)
@@ -894,7 +913,7 @@ export function createTunnelTcpClientHelper(param) {
     /** @type{Map<number,SocketChannel>} */
     let channelMap = new Map()
 
-    /** @type{Map<string,{host:string;port:number;key_iv:[CryptoKey, Uint8Array]}>} */
+    /** @type{Map<string,{host:string;port:number;key_iv:[CryptoKey, Uint8Array<ArrayBuffer>]}>} */
     let listenKeyParamMap = new Map()
 
     let server_key_iv = buildKeyIv(param.serverKey, 10)
@@ -921,6 +940,9 @@ export function createTunnelTcpClientHelper(param) {
     }
 
     decode.readable.pipeTo(new WritableStream({
+        /**
+         * @param {Uint8Array<ArrayBuffer>} buffer
+         */
         async write(buffer) {
             try {
                 await dispatchClientBufferData(param, setup, listenKeyParamMap, channelMap, encodeWriter, buffer)
@@ -1351,6 +1373,9 @@ export function createTunnelTcpClientHttp(param) {
     let socketWriter = null
     let bufferedTransform = createTimeBufferedTransformStream(50)
     helper.readable.pipeThrough(bufferedTransform).pipeTo(new WritableStream({
+        /**
+         * @param {Uint8Array<ArrayBufferLike>} chunk
+         */
         async write(chunk) {
             while (!param.signal.aborted && socketWriter == null) {
                 await signal.promise

@@ -1,5 +1,5 @@
 import net from 'node:net'
-import { WritableStream } from "stream/web"
+import { WritableStream, ReadableStream, ReadableStreamDefaultReader, WritableStreamDefaultWriter } from "stream/web"
 
 
 export type PromiseResolvers = {
@@ -38,7 +38,7 @@ export type TCP_TUNNEL_DATA = {
     dstId: number
     srcChannel: number
     dstChannel: number
-    buffer: Uint8Array
+    buffer: Uint8Array<ArrayBuffer>
 }
 
 export type TUNNEL_TCP_DATA_LISTEN = {
@@ -59,18 +59,18 @@ export type TUNNEL_TCP_SERVER = {
 }
 
 export type TUNNEL_TCP_SERVER_HELPER = {
-    readable: ReadableStream<Uint8Array>
-    writable: WritableStream<Uint8Array>
-    reader: ReadableStreamDefaultReader<Uint8Array>
-    writer: WritableStreamDefaultWriter<Uint8Array>
+    readable: ReadableStream<Uint8Array<ArrayBuffer>>
+    writable: WritableStream<Uint8Array<ArrayBuffer>>
+    reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>
+    writer: WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>
     dstId: number
 }
 
 export type TUNNEL_TCP_CLIENT_HELPER = {
-    readable: ReadableStream<Uint8Array>
-    writable: WritableStream<Uint8Array>
-    reader: ReadableStreamDefaultReader<Uint8Array>
-    writer: WritableStreamDefaultWriter<Uint8Array>
+    readable: ReadableStream<Uint8Array<ArrayBuffer>>
+    writable: WritableStream<Uint8Array<ArrayBuffer>>
+    reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>
+    writer: WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>
     param: TunnelTcpClientHelperParam
     listen: (param: {
         clientKey?: string
@@ -87,7 +87,7 @@ export type TUNNEL_TCP_CLIENT_HELPER = {
 
 
 export type SocketChannel = {
-    writer: WritableStreamDefaultWriter<Uint8Array>
+    writer: WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>
     socket: net.Socket
     srcId: number
     dstId: number
@@ -95,7 +95,7 @@ export type SocketChannel = {
     dstChannel: number
     notify: (size: number) => void
     recvPackSize: number
-    key_iv: [CryptoKey, Uint8Array]
+    key_iv: [CryptoKey, Uint8Array<ArrayBuffer>]
 }
 
 
