@@ -58,33 +58,18 @@ export type TUNNEL_TCP_SERVER = {
     encodeWriter: WritableStreamDefaultWriter<Uint8Array>
 }
 
-export type TUNNEL_TCP_SERVER_HELPER = {
-    readable: ReadableStream<Uint8Array<ArrayBuffer>>
-    writable: WritableStream<Uint8Array<ArrayBuffer>>
-    reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>
-    writer: WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>
-    dstId: number
+export type ListenParam = {
+    clientKey?: string;
+    tunnelKey: string;
+    host?: string;
+    port: number;
 }
 
-export type TUNNEL_TCP_CLIENT_HELPER = {
-    readable: ReadableStream<Uint8Array<ArrayBuffer>>
-    writable: WritableStream<Uint8Array<ArrayBuffer>>
-    reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>
-    writer: WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>
-    param: TunnelTcpClientHelperParam
-    listen: (param: {
-        clientKey?: string
-        tunnelKey: string
-        host?: string
-        port: number
-    }) => Promise<void>
-    connect: (param: {
-        clientKey?: string
-        tunnelKey: string
-        port: number
-    }) => Promise<void>
+export type ConnectParam = {
+    clientKey?: string;
+    tunnelKey: string;
+    port: number;
 }
-
 
 export type SocketChannel = {
     writer: WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>

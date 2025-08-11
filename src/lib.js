@@ -6,9 +6,10 @@ import https from 'node:https'
 import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web'
 
 /**
+ * @import { ReadableStreamDefaultReader, WritableStreamDefaultWriter } from 'node:stream/web'
  * @import {WebSocketServer} from 'ws'
  * @import Router from '@koa/router'
- * @import {SocketChannel, TCP_TUNNEL_DATA, TUNNEL_TCP_CLIENT_HELPER, TUNNEL_TCP_DATA_CONNECT, TUNNEL_TCP_DATA_LISTEN, TUNNEL_TCP_DATA_PINGPONG, TUNNEL_TCP_SERVER_HELPER, TunnelTcpClientHelperParam, TunnelTcpServerHelperParam} from './types.js'
+ * @import {ConnectParam, ListenParam, SocketChannel, TCP_TUNNEL_DATA, TUNNEL_TCP_DATA_CONNECT, TUNNEL_TCP_DATA_LISTEN, TUNNEL_TCP_DATA_PINGPONG, TunnelTcpClientHelperParam, TunnelTcpServerHelperParam} from './types.js'
  */
 
 const DEBUG_TUNNEL_TCP = false
@@ -871,6 +872,9 @@ export function createTunnelTcpServerHelper(param) {
     if (DEBUG_TUNNEL_TCP) {
         let writer = encodeWriter
         encodeWriter = new WritableStream({
+            /**
+             * @param {Uint8Array<ArrayBuffer>} chunk
+             */
             async write(chunk) {
                 tcpTunnelDataSend += chunk.length
                 let data = parseTcpTunnelData(chunk)
@@ -881,6 +885,9 @@ export function createTunnelTcpServerHelper(param) {
     }
 
     decode.readable.pipeTo(new WritableStream({
+        /**
+         * @param {Uint8Array<ArrayBuffer>} chunk
+         */
         async write(chunk) {
             try {
                 await dispatchServerBufferData(param, encodeWriter, chunk)
@@ -901,66 +908,112 @@ export function createTunnelTcpServerHelper(param) {
         buffer: new Uint8Array(0),
     }))
 
-    /** @type{TUNNEL_TCP_SERVER_HELPER} */
-    let helper = { readable: encode.readable, writable: decode.writable, reader: null, writer: null, dstId: id, }
-    return helper
+    return new TunnelTcpServerHelper(id, encode, decode)
 }
 
 /**
  * @param {TunnelTcpClientHelperParam} param 
  */
 export function createTunnelTcpClientHelper(param) {
-    /** @type{Map<number,SocketChannel>} */
-    let channelMap = new Map()
-
-    /** @type{Map<string,{host:string;port:number;key_iv:[CryptoKey, Uint8Array<ArrayBuffer>]}>} */
-    let listenKeyParamMap = new Map()
-
     let server_key_iv = buildKeyIv(param.serverKey, 10)
-
-    param.signal.addEventListener('abort', () => {
-        channelMap.values().forEach(o => {
-            o.socket.destroy()
-        })
-    })
-
     let encode = createEncodeStream(server_key_iv)
     let decode = createDecodeStream(server_key_iv)
-    let encodeWriter = encode.writable.getWriter()
-    if (DEBUG_TUNNEL_TCP) {
-        let writer = encodeWriter
-        encodeWriter = new WritableStream({
-            async write(chunk) {
-                tcpTunnelDataSend += chunk.length
-                let data = parseTcpTunnelData(chunk)
-                console.info('send', printTcpTunnelData(data))
-                writer.write(chunk)
+    return new TunnelTcpClientHelper(param, encode, decode)
+}
+
+export class TunnelTcpServerHelper {
+    dstId = 0
+    /** @type{ReadableStream<Uint8Array<ArrayBuffer>>} */
+    readable = null
+    /** @type{WritableStream<Uint8Array<ArrayBuffer>>} */
+    writable = null
+    /** @type{ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>} */
+    reader = null
+    /** @type{WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>} */
+    writer = null
+    /**
+     * @param {number} id
+     * @param {TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>} encode
+     * @param {TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>} decode
+     */
+    constructor(id, encode, decode) {
+        this.dstId = id
+        this.readable = encode.readable
+        this.writable = decode.writable
+    }
+}
+
+export class TunnelTcpClientHelper {
+    /** @type{ReadableStream<Uint8Array<ArrayBuffer>>} */
+    readable = null
+    /** @type{WritableStream<Uint8Array<ArrayBuffer>>} */
+    writable = null
+    /** @type{ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>} */
+    reader = null
+    /** @type{WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>} */
+    writer = null
+    /** @type{TunnelTcpClientHelperParam} */
+    param = null
+
+    /** @type{Map<number,SocketChannel>} */
+    channelMap = new Map()
+    /** @type{Map<string,{host:string;port:number;key_iv:[CryptoKey, Uint8Array<ArrayBuffer>]}>} */
+    listenKeyParamMap = new Map()
+    /** @type{Set<ListenParam>} */
+    listenParams = new Set()
+    /** @type{WritableStreamDefaultWriter<Uint8Array<ArrayBuffer>>} */
+    encodeWriter = null
+
+    /**
+     * @param {TunnelTcpClientHelperParam} param
+     * @param {TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>} encode
+     * @param {TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>} decode
+     */
+    constructor(param, encode, decode) {
+        this.param = param
+        this.readable = encode.readable
+        this.writable = decode.writable
+
+        param.signal.addEventListener('abort', () => {
+            this.channelMap.values().forEach(o => {
+                o.socket.destroy()
+            })
+        })
+
+        this.encodeWriter = encode.writable.getWriter()
+        if (DEBUG_TUNNEL_TCP) {
+            let writer = this.encodeWriter
+            this.encodeWriter = new WritableStream({
+                async write(chunk) {
+                    tcpTunnelDataSend += chunk.length
+                    let data = parseTcpTunnelData(chunk)
+                    console.info('send', printTcpTunnelData(data))
+                    writer.write(chunk)
+                }
+            }).getWriter()
+        }
+
+        const thiz = this
+        decode.readable.pipeTo(new WritableStream({
+            /**
+             * @param {Uint8Array<ArrayBuffer>} buffer
+             */
+            async write(buffer) {
+                try {
+                    await dispatchClientBufferData(param, () => thiz.setup(), thiz.listenKeyParamMap, thiz.channelMap, thiz.encodeWriter, buffer)
+                } catch (error) {
+                    console.error('decode.readable.pipeTo.write', error.message)
+                }
             }
-        }).getWriter()
+        }))
     }
 
-    decode.readable.pipeTo(new WritableStream({
-        /**
-         * @param {Uint8Array<ArrayBuffer>} buffer
-         */
-        async write(buffer) {
-            try {
-                await dispatchClientBufferData(param, setup, listenKeyParamMap, channelMap, encodeWriter, buffer)
-            } catch (error) {
-                console.error('decode.readable.pipeTo.write', error.message)
-            }
-        }
-    }))
-
-    let outParam = param
-    let listenParams = new Set()
-
-    async function setup() {
-        channelMap.forEach((channel) => {
-            channel.srcId = param.clientDataId
+    async setup() {
+        this.channelMap.forEach((channel) => {
+            channel.srcId = this.param.clientDataId
             /** @type{TUNNEL_TCP_DATA_PINGPONG} */
             let pingData = { time: Date.now() }
-            encodeWriter.write(buildTcpTunnelData({
+            this.encodeWriter.write(buildTcpTunnelData({
                 type: TUNNEL_TCP_TYPE_PING,
                 srcId: channel.srcId,
                 srcChannel: channel.srcChannel,
@@ -969,34 +1022,29 @@ export function createTunnelTcpClientHelper(param) {
                 buffer: Uint8Array_from(JSON.stringify(pingData)),
             }))
         })
-        for (const param of listenParams) {
-            await listen(param)
+        for (const param of this.listenParams) {
+            await this.listen(param)
         }
     }
 
     /**
-     * @param {{ 
-     * clientKey?:string;
-     * tunnelKey:string;
-     * host?:string;
-     * port:number; 
-     * }} param
+     * @param {ListenParam} param
      */
-    async function listen(param) {
-        listenParams.add(param)
-        console.info('listenParams size', listenParams.size)
-        if (outParam.clientDataId < 1) {
+    async listen(param) {
+        this.listenParams.add(param)
+        console.info('listenParams size', this.listenParams.size)
+        if (this.param.clientDataId < 1) {
             console.info('skip send listen dataId == 0')
             return
         }
         let key = sha512(param.tunnelKey)
         let key_iv = await buildKeyIv(param.clientKey, 10)
-        listenKeyParamMap.set(key, { host: param.host, port: param.port, key_iv })
+        this.listenKeyParamMap.set(key, { host: param.host, port: param.port, key_iv })
         /** @type{TUNNEL_TCP_DATA_LISTEN} */
         let listenData = { key: key }
-        await encodeWriter.write(buildTcpTunnelData({
+        await this.encodeWriter.write(buildTcpTunnelData({
             type: TUNNEL_TCP_TYPE_LISTEN,
-            srcId: outParam.clientDataId,
+            srcId: this.param.clientDataId,
             srcChannel: 0,
             dstId: 0,
             dstChannel: 0,
@@ -1005,19 +1053,15 @@ export function createTunnelTcpClientHelper(param) {
     }
 
     /**
-     * @param {{ 
-     * clientKey?:string;
-     * tunnelKey: string;
-     * port: number;
-     * }} param
+     * @param {ConnectParam} param
      */
-    async function connect(param) {
+    async connect(param) {
         let key_iv = await buildKeyIv(param.clientKey, 10)
         let server = net.createServer((socket) => {
-            let channelId = outParam.uniqueId++
+            let channelId = this.param.uniqueId++
             socket.on('error', (err) => {
                 console.error('createTunnelTcpClientHelper on socket error', err.message)
-                channelMap.delete(channelId)
+                this.channelMap.delete(channelId)
             })
             /** @type{TUNNEL_TCP_DATA_CONNECT} */
             let connectData = { key: sha512(param.tunnelKey) }
@@ -1025,7 +1069,7 @@ export function createTunnelTcpClientHelper(param) {
             let channel = {
                 writer: Writable.toWeb(socket).getWriter(),
                 socket,
-                srcId: outParam.clientDataId,
+                srcId: this.param.clientDataId,
                 srcChannel: channelId,
                 dstId: 0,
                 dstChannel: 0,
@@ -1033,8 +1077,8 @@ export function createTunnelTcpClientHelper(param) {
                 key_iv,
                 notify: null,
             }
-            channelMap.set(channelId, channel)
-            encodeWriter.write(buildTcpTunnelData({
+            this.channelMap.set(channelId, channel)
+            this.encodeWriter.write(buildTcpTunnelData({
                 type: TUNNEL_TCP_TYPE_CONNECT,
                 srcId: channel.srcId,
                 srcChannel: channel.srcChannel,
@@ -1046,13 +1090,8 @@ export function createTunnelTcpClientHelper(param) {
         server.on('error', (err) => {
             console.error('createTunnelTcpClientHelper connect on server error', err.message)
         })
-        outParam.signal.addEventListener('abort', () => { server.close() })
+        this.param.signal.addEventListener('abort', () => { server.close() })
     }
-
-    /** @type{TUNNEL_TCP_CLIENT_HELPER} */
-    let helper = { readable: encode.readable, writable: decode.writable, reader: null, writer: null, listen, connect, param: outParam }
-    return helper
-
 }
 
 
