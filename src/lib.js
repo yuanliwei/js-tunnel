@@ -308,7 +308,6 @@ export function printTcpTunnelData(data) {
         [TUNNEL_TCP_TYPE_CLOSE]: 'TUNNEL_TCP_TYPE_CLOSE     ',
         [TUNNEL_TCP_TYPE_PING]: 'TUNNEL_TCP_TYPE_PING      ',
         [TUNNEL_TCP_TYPE_PONG]: 'TUNNEL_TCP_TYPE_PONG      ',
-        [TUNNEL_TCP_TYPE_ACK]: 'TUNNEL_TCP_TYPE_ACK       ',
     }[data.type]} recv: ${(tcpTunnelDataRecv)} send: ${(tcpTunnelDataSend)} size:${data.buffer.length}`
 }
 
@@ -421,7 +420,6 @@ export const TUNNEL_TCP_TYPE_ERROR = 0x8117f762
 export const TUNNEL_TCP_TYPE_CLOSE = 0x72fd6470
 export const TUNNEL_TCP_TYPE_PING = 0x4768e1ba
 export const TUNNEL_TCP_TYPE_PONG = 0x106f43fb
-export const TUNNEL_TCP_TYPE_ACK = 0xc5870539
 
 /**
  * @param {TCP_TUNNEL_DATA} box
@@ -532,46 +530,15 @@ export function createTimeBufferedTransformStream(bufferTime) {
 export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
     let channel = channelMap.get(channelId)
     let socket = channel.socket
-    let signal = Promise_withResolvers()
-    signal.resolve()
     let sendPackSize = 0
-    let remoteRecvPackSize = 0
-    channel.notify = (size) => {
-        remoteRecvPackSize = size
-        signal.resolve()
-    }
     let [clientKey, clientIv] = channel.key_iv
     let bufferedTransform = createTimeBufferedTransformStream(50)
-    let backPressureTimer = null
     Readable.toWeb(socket).pipeThrough(bufferedTransform).pipeTo(new WritableStream({
         /**
          * @param {Uint8Array<ArrayBuffer>} chunk
          */
         async write(chunk) {
             const buffer = await encrypt(chunk, clientKey, clientIv)
-            let bufferPackSize = sendPackSize - remoteRecvPackSize
-            if (DEBUG_TUNNEL_TCP) {
-                console.warn('bufferPackSize:', bufferPackSize)
-            }
-            if (bufferPackSize > 10) {
-                signal.resolve()
-                signal = Promise_withResolvers()
-                const s = signal
-                backPressureTimer = setTimeout(() => {
-                    s.resolve()
-                    console.error('pipeSocketDataWithChannel timeout close channel')
-                    sendPackSize = 0
-                    this.close()
-                }, 10_000).unref()
-                if (DEBUG_TUNNEL_TCP) {
-                    console.info('stop wait signal', ' sendPackSize:', sendPackSize, ' recvPackSize:', remoteRecvPackSize, ' bufferPackSize:', bufferPackSize)
-                }
-            }
-            await signal.promise
-            if (backPressureTimer) {
-                clearTimeout(backPressureTimer)
-                backPressureTimer = null
-            }
             await encodeWriter.write(buildTcpTunnelData({
                 type: TUNNEL_TCP_TYPE_DATA,
                 srcId: channel.srcId,
@@ -711,7 +678,6 @@ async function dispatchClientBufferData(param, setup, listenKeyParamMap, channel
             dstChannel: data.srcChannel,
             recvPackSize: 0,
             key_iv,
-            notify: null,
         }
         channelMap.set(channelId, channel)
         connectSocket.on('connect', () => {
@@ -806,43 +772,10 @@ async function dispatchClientBufferData(param, setup, listenKeyParamMap, channel
                 await channel.writer.write(buffer)
             }
             channel.recvPackSize++
-            await sendAck(encodeWriter, channel)
         } else {
             await closeRemoteChannel(encodeWriter, data)
         }
     }
-    if (data.type == TUNNEL_TCP_TYPE_ACK) {
-        let channelId = data.dstChannel
-        let channel = channelMap.get(channelId)
-        if (channel) {
-            channel.srcId = data.dstId
-            channel.dstId = data.srcId
-            let size = readUInt32LE(data.buffer, 0)
-            channel.notify(size)
-        } else {
-            await closeRemoteChannel(encodeWriter, data)
-        }
-    }
-}
-
-/**
- * @param {WritableStreamDefaultWriter<Uint8Array>} encodeWriter
- * @param {SocketChannel} channel
- */
-export async function sendAck(encodeWriter, channel) {
-    if (channel.recvPackSize % 5 != 0) {
-        return
-    }
-    let sizeBuffer = new Uint8Array(4)
-    writeUInt32LE(sizeBuffer, channel.recvPackSize, 0)
-    await encodeWriter.write(buildTcpTunnelData({
-        type: TUNNEL_TCP_TYPE_ACK,
-        srcId: channel.srcId,
-        srcChannel: channel.srcChannel,
-        dstId: channel.dstId,
-        dstChannel: channel.dstChannel,
-        buffer: sizeBuffer,
-    }))
 }
 
 /**
@@ -1000,7 +933,10 @@ export class TunnelTcpClientHelper {
              */
             async write(buffer) {
                 try {
-                    await dispatchClientBufferData(param, () => thiz.setup(), thiz.listenKeyParamMap, thiz.channelMap, thiz.encodeWriter, buffer)
+                    await Promise.race([
+                        sleep(5000),
+                        dispatchClientBufferData(param, () => thiz.setup(), thiz.listenKeyParamMap, thiz.channelMap, thiz.encodeWriter, buffer),
+                    ])
                 } catch (error) {
                     console.error('decode.readable.pipeTo.write', error.message)
                 }
@@ -1075,7 +1011,6 @@ export class TunnelTcpClientHelper {
                 dstChannel: 0,
                 recvPackSize: 0,
                 key_iv,
-                notify: null,
             }
             this.channelMap.set(channelId, channel)
             this.encodeWriter.write(buildTcpTunnelData({
@@ -1285,7 +1220,10 @@ export function createTunnelTcpClientWebSocket(param) {
                 await signal.promise
             }
             if (!param.signal.aborted) {
-                await socketWriter.write(chunk)
+                await Promise.race([
+                    sleep(5000),
+                    socketWriter.write(chunk),
+                ])
             }
         }
     }))

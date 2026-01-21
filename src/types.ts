@@ -78,7 +78,6 @@ export type SocketChannel = {
     dstId: number
     srcChannel: number
     dstChannel: number
-    notify: (size: number) => void
     recvPackSize: number
     key_iv: [CryptoKey, Uint8Array<ArrayBuffer>]
 }

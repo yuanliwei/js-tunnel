@@ -645,8 +645,8 @@ test('terminal-server', async () => {
 
     await sleep(20_000)
 
-    strictEqual(socketCreateCount, 2)
-    strictEqual(recvCount, 14)
+    strictEqual(socketCreateCount, 1)
+    strictEqual(recvCount, 25)
 
     console.info('over!')
 })
