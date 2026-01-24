@@ -79,6 +79,7 @@ export type SocketChannel = {
     srcChannel: number
     dstChannel: number
     recvPackSize: number
+    writableNeedDrainCount: number
     key_iv: [CryptoKey, Uint8Array<ArrayBuffer>]
 }
 

@@ -546,10 +546,12 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
                 dstId: channel.dstId,
                 dstChannel: channel.dstChannel,
                 buffer: buffer,
-            })).catch((err) => { console.error('web stream write error', err.message) })
+            })).catch((err) => { console.error(channelId, 'web stream write error', err.message) })
             sendPackSize++
         },
         async close() {
+            channelMap.delete(channelId)
+            socket.destroy()
             encodeWriter.write(buildTcpTunnelData({
                 type: TUNNEL_TCP_TYPE_CLOSE,
                 srcId: channel.srcId,
@@ -557,15 +559,24 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
                 dstId: channel.dstId,
                 dstChannel: channel.dstChannel,
                 buffer: new Uint8Array(0),
-            })).catch((err) => { console.error('web stream write error', err.message) })
-            channelMap.delete(channelId)
-            socket.destroy()
+            })).catch((err) => { console.error(channelId, 'pipeSocketDataWithChannel.close web stream write error', err.message) })
         }
     })).catch((err) => {
-        console.error('web stream error', err.message)
+        console.error(channelId, 'pipeSocketDataWithChannel web stream error', err.message, encodeWriter.desiredSize)
+        channelMap.delete(channelId)
+        socket.destroy()
+        encodeWriter.write(buildTcpTunnelData({
+            type: TUNNEL_TCP_TYPE_CLOSE,
+            srcId: channel.srcId,
+            srcChannel: channel.srcChannel,
+            dstId: channel.dstId,
+            dstChannel: channel.dstChannel,
+            buffer: new Uint8Array(0),
+        })).catch((err) => { console.error(channelId, 'web stream write error', err.message) })
     })
     socket.on('error', (err) => {
-        console.error('pipeSocketDataWithChannel on error ', err.message)
+        console.error(channelId, 'pipeSocketDataWithChannel on error ', err.message)
+        channelMap.delete(channelId)
         encodeWriter.write(buildTcpTunnelData({
             type: TUNNEL_TCP_TYPE_ERROR,
             srcId: channel.srcId,
@@ -573,7 +584,18 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
             dstId: channel.dstId,
             dstChannel: channel.dstChannel,
             buffer: new Uint8Array(0),
-        })).catch((err) => { console.error('web stream write error', err.message) })
+        })).catch((err) => { console.error(channelId, 'web stream write error', err.message) })
+    })
+    socket.on('close', () => {
+        console.error(channelId, 'pipeSocketDataWithChannel on close ')
+        encodeWriter.write(buildTcpTunnelData({
+            type: TUNNEL_TCP_TYPE_CLOSE,
+            srcId: channel.srcId,
+            srcChannel: channel.srcChannel,
+            dstId: channel.dstId,
+            dstChannel: channel.dstChannel,
+            buffer: new Uint8Array(0),
+        })).catch((err) => { console.error(channelId, 'pipeSocketDataWithChannel web stream write error', err.message) })
         channelMap.delete(channelId)
     })
 }
@@ -677,6 +699,7 @@ async function dispatchClientBufferData(param, setup, listenKeyParamMap, channel
             srcChannel: channelId,
             dstChannel: data.srcChannel,
             recvPackSize: 0,
+            writableNeedDrainCount: 0,
             key_iv,
         }
         channelMap.set(channelId, channel)
@@ -769,7 +792,17 @@ async function dispatchClientBufferData(param, setup, listenKeyParamMap, channel
             let [clientKey, clientIv] = channel.key_iv
             let buffer = await decrypt(data.buffer, clientKey, clientIv)
             if (buffer.length > 0) {
-                await channel.writer.write(buffer)
+                channel.socket.write(buffer)
+                if (channel.socket.writableNeedDrain) {
+                    channel.writableNeedDrainCount++
+                } else {
+                    channel.writableNeedDrainCount = 0
+                }
+                if (channel.writableNeedDrainCount > 100) {
+                    console.error(channelId, 'scoket.destroy() on writableNeedDrainCount>100', channel.writableNeedDrainCount)
+                    channelMap.delete(channelId)
+                    channel.socket.destroy()
+                }
             }
             channel.recvPackSize++
         } else {
@@ -933,10 +966,7 @@ export class TunnelTcpClientHelper {
              */
             async write(buffer) {
                 try {
-                    await Promise.race([
-                        sleep(5000),
-                        dispatchClientBufferData(param, () => thiz.setup(), thiz.listenKeyParamMap, thiz.channelMap, thiz.encodeWriter, buffer),
-                    ])
+                    await dispatchClientBufferData(param, () => thiz.setup(), thiz.listenKeyParamMap, thiz.channelMap, thiz.encodeWriter, buffer)
                 } catch (error) {
                     console.error('decode.readable.pipeTo.write', error.message)
                 }
@@ -996,8 +1026,14 @@ export class TunnelTcpClientHelper {
         let server = net.createServer((socket) => {
             let channelId = this.param.uniqueId++
             socket.on('error', (err) => {
-                console.error('createTunnelTcpClientHelper on socket error', err.message)
+                console.error(channelId, 'TunnelTcpClientHelper.connect.onconnect socket error', err.message)
                 this.channelMap.delete(channelId)
+            })
+            socket.on('end', () => {
+                console.info(channelId, 'TunnelTcpClientHelper.connect.onconnect socket end')
+            })
+            socket.on('close', () => {
+                console.info(channelId, 'TunnelTcpClientHelper.connect.onconnect socket close')
             })
             /** @type{TUNNEL_TCP_DATA_CONNECT} */
             let connectData = { key: sha512(param.tunnelKey) }
@@ -1010,6 +1046,7 @@ export class TunnelTcpClientHelper {
                 dstId: 0,
                 dstChannel: 0,
                 recvPackSize: 0,
+                writableNeedDrainCount: 0,
                 key_iv,
             }
             this.channelMap.set(channelId, channel)
@@ -1023,7 +1060,7 @@ export class TunnelTcpClientHelper {
             }))
         }).listen(param.port)
         server.on('error', (err) => {
-            console.error('createTunnelTcpClientHelper connect on server error', err.message)
+            console.error('TunnelTcpClientHelper.connect server error', err.message)
         })
         this.param.signal.addEventListener('abort', () => { server.close() })
     }
@@ -1220,10 +1257,7 @@ export function createTunnelTcpClientWebSocket(param) {
                 await signal.promise
             }
             if (!param.signal.aborted) {
-                await Promise.race([
-                    sleep(5000),
-                    socketWriter.write(chunk),
-                ])
+                await socketWriter.write(chunk)
             }
         }
     }))
