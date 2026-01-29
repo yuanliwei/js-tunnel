@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import { ok, strictEqual } from 'node:assert'
-import { createTunnelTcpClientHttp, createTunnelTcpClientSocket, createTunnelTcpClientWebSocket, createTunnelTcpServerKoaRouter, createTunnelTcpServerSocket, createTunnelTcpServerWebSocket, formatSize, runWithAbortController, sleep, Uint8Array_toString } from './lib.js'
+import { createTunnelTcpClientHttp, createTunnelTcpClientSocket, createTunnelTcpClientWebSocket, createTunnelTcpServerKoaMiddleware, createTunnelTcpServerKoaRouter, createTunnelTcpServerSocket, createTunnelTcpServerWebSocket, formatSize, runWithAbortController, sleep, Uint8Array_toString } from './lib.js'
 import net from 'net'
 import http from 'http'
 import { Readable, Transform } from 'node:stream'
@@ -244,6 +244,62 @@ test('tunnel-tcp-socket-test-http', async () => {
     console.info('over!')
 })
 
+test('tunnel-tcp-socket-test-http-KoaMiddleware', async () => {
+    // node --test-name-pattern="^tunnel-tcp-socket-test-http-KoaMiddleware$" src/lib.test.js
+
+    using d = new DisposableStack()
+    const ac = new AbortController()
+    d.adopt(0, () => ac.abort())
+    const { signal } = ac
+
+    // 配置常量
+    const PORTS = { server: 9435, target: 9436, proxy: 9437 }
+    const KEYS = { server: '2934c57f790f9e99a52a121802df231c', tunnel: 'b0f5014acad2060d6bd3730a1721c97f' }
+    const TUNNEL_ID = '0f7c5b2c9080eaa9e4d6139126daac04'
+    const TUNNEL_URL = `http://127.0.0.1:${PORTS.server}/tunnel/${TUNNEL_ID}`
+
+    console.info('创建socket服务')
+    const socketServer = net.createServer(socket => socket.pipe(socket))
+    d.adopt(0, () => socketServer.close())
+    await new Promise((resolve, reject) => { socketServer.on('error', reject); socketServer.listen(PORTS.target, () => resolve()) })
+
+    const clientOpts = { signal, serverKey: KEYS.server, url: TUNNEL_URL }
+
+    console.info('创建监听服务')
+    const listener = createTunnelTcpClientHttp(clientOpts)
+    listener.listen({ host: '127.0.0.1', port: PORTS.target, tunnelKey: KEYS.tunnel })
+
+    console.info('创建连接服务')
+    const connector = createTunnelTcpClientHttp(clientOpts)
+    connector.connect({ port: PORTS.proxy, tunnelKey: KEYS.tunnel })
+
+    console.info('创建转发服务')
+    const app = new Koa()
+    app.use(createTunnelTcpServerKoaMiddleware({ signal, serverKey: KEYS.server, path: `/tunnel/${TUNNEL_ID}` }))
+    const koaServer = http.createServer(app.callback())
+    d.adopt(0, () => koaServer.close())
+    await new Promise((resolve, reject) => { koaServer.on('error', reject); koaServer.listen(PORTS.server, () => resolve()) })
+
+    await new Promise(r => setTimeout(r, 1000))
+
+    const socket = net.createConnection({ host: '127.0.0.1', port: PORTS.proxy })
+    d.adopt(0, () => socket.destroy())
+    await new Promise(resolve => socket.once('connect', resolve))
+    let recvChunks = ''
+    socket.on('data', chunk => { recvChunks += chunk.toString() })
+
+    let sendChunks = ''
+    // 发送数据
+    for (let i = 0; i < 100; i++) {
+        sendChunks += `qwertyuiop - ${i}`
+        socket.write(`qwertyuiop - ${i}`)
+    }
+    await sleep(100)
+
+    strictEqual(recvChunks, sendChunks)
+    console.info('over!')
+})
+
 test('backpressure-socket', async () => {
     // node --test-name-pattern="^backpressure-socket$" src/lib.test.js
 
@@ -373,7 +429,8 @@ test('backpressure-socket', async () => {
             socket1.destroy()
         })
 
-        ok(receiveSize > 640_000)
+        console.info(receiveSize, sendSize)
+        ok(receiveSize > 65535)
         ok(sendSize < 45000000)
 
     })

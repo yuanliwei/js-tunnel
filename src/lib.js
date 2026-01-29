@@ -9,6 +9,7 @@ import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web
  * @import { ReadableStreamDefaultReader, WritableStreamDefaultWriter } from 'node:stream/web'
  * @import {WebSocketServer} from 'ws'
  * @import Router from '@koa/router'
+ * @import { DefaultContext, DefaultState, Middleware } from 'koa'
  * @import {ConnectParam, ListenParam, SocketChannel, TCP_TUNNEL_DATA, TUNNEL_TCP_DATA_CONNECT, TUNNEL_TCP_DATA_LISTEN, TUNNEL_TCP_DATA_PINGPONG, TunnelTcpClientHelperParam, TunnelTcpServerHelperParam} from './types.js'
  */
 
@@ -533,7 +534,7 @@ export function pipeSocketDataWithChannel(channelMap, channelId, encodeWriter) {
     let sendPackSize = 0
     let [clientKey, clientIv] = channel.key_iv
     let bufferedTransform = createTimeBufferedTransformStream(50)
-    Readable.toWeb(socket).pipeThrough(bufferedTransform).pipeTo(new WritableStream({
+    Readable.toWeb(socket).pipeThrough(bufferedTransform).pipeTo(createWritableStream({
         /**
          * @param {Uint8Array<ArrayBuffer>} chunk
          */
@@ -837,10 +838,7 @@ export function createTunnelTcpServerHelper(param) {
 
     if (DEBUG_TUNNEL_TCP) {
         let writer = encodeWriter
-        encodeWriter = new WritableStream({
-            /**
-             * @param {Uint8Array<ArrayBuffer>} chunk
-             */
+        encodeWriter = createWritableStream({
             async write(chunk) {
                 tcpTunnelDataSend += chunk.length
                 let data = parseTcpTunnelData(chunk)
@@ -850,10 +848,7 @@ export function createTunnelTcpServerHelper(param) {
         }).getWriter()
     }
 
-    decode.readable.pipeTo(new WritableStream({
-        /**
-         * @param {Uint8Array<ArrayBuffer>} chunk
-         */
+    decode.readable.pipeTo(createWritableStream({
         async write(chunk) {
             try {
                 await dispatchServerBufferData(param, encodeWriter, chunk)
@@ -949,7 +944,7 @@ export class TunnelTcpClientHelper {
         this.encodeWriter = encode.writable.getWriter()
         if (DEBUG_TUNNEL_TCP) {
             let writer = this.encodeWriter
-            this.encodeWriter = new WritableStream({
+            this.encodeWriter = createWritableStream({
                 async write(chunk) {
                     tcpTunnelDataSend += chunk.length
                     let data = parseTcpTunnelData(chunk)
@@ -960,10 +955,7 @@ export class TunnelTcpClientHelper {
         }
 
         const thiz = this
-        decode.readable.pipeTo(new WritableStream({
-            /**
-             * @param {Uint8Array<ArrayBuffer>} buffer
-             */
+        decode.readable.pipeTo(createWritableStream({
             async write(buffer) {
                 try {
                     await dispatchClientBufferData(param, () => thiz.setup(), thiz.listenKeyParamMap, thiz.channelMap, thiz.encodeWriter, buffer)
@@ -1128,7 +1120,7 @@ export function createTunnelTcpClientSocket(param) {
     let signal = Promise_withResolvers()
     /** @type{WritableStreamDefaultWriter<Uint8Array>} */
     let socketWriter = null
-    helper.readable.pipeTo(new WritableStream({
+    helper.readable.pipeTo(createWritableStream({
         async write(chunk) {
             while (!param.signal.aborted && socketWriter == null) {
                 await signal.promise
@@ -1146,7 +1138,7 @@ export function createTunnelTcpClientSocket(param) {
         })
         socket.once('connect', () => {
             socketWriter = Writable.toWeb(socket).getWriter()
-            Readable.toWeb(socket).pipeTo(new WritableStream({
+            Readable.toWeb(socket).pipeTo(createWritableStream({
                 async write(chunk) {
                     await helper.writer.write(chunk)
                 }
@@ -1203,7 +1195,7 @@ export function createTunnelTcpServerWebSocket(param) {
         }
         let helper = createTunnelTcpServerHelper(helperParam)
         helper.writer = helper.writable.getWriter()
-        helper.readable.pipeTo(new WritableStream({
+        helper.readable.pipeTo(createWritableStream({
             async write(chunk) {
                 await new Promise((resolve) => {
                     ws.send(chunk, resolve)
@@ -1251,7 +1243,7 @@ export function createTunnelTcpClientWebSocket(param) {
     let signal = Promise_withResolvers()
     /** @type{WritableStreamDefaultWriter<Uint8Array>} */
     let socketWriter = null
-    helper.readable.pipeTo(new WritableStream({
+    helper.readable.pipeTo(createWritableStream({
         async write(chunk) {
             while (!param.signal.aborted && socketWriter == null) {
                 await signal.promise
@@ -1266,7 +1258,7 @@ export function createTunnelTcpClientWebSocket(param) {
         let promise = Promise_withResolvers()
         const ws = new WebSocket(param.url)
         ws.addEventListener('open', () => {
-            socketWriter = new WritableStream({
+            socketWriter = createWritableStream({
                 async write(chunk) {
                     ws.send(chunk)
                 }
@@ -1325,7 +1317,7 @@ export function createTunnelTcpServerKoaRouter(param) {
         helper.writer = helper.writable.getWriter()
         helper.reader = helper.readable.getReader()
         ctx.req.on('error', (e) => { console.error('createTunnelTcpServerKoaRouter in req error', e.message) })
-        Readable.toWeb(ctx.req).pipeTo(new WritableStream({
+        Readable.toWeb(ctx.req).pipeTo(createWritableStream({
             async write(chunk) {
                 await helper.writer.write(chunk)
             }
@@ -1337,7 +1329,7 @@ export function createTunnelTcpServerKoaRouter(param) {
             'Content-Type': 'application/octet-stream'
         })
         ctx.body = Readable.fromWeb(new ReadableStream({
-            async pull(controller) {
+            async pull(/** @type{ReadableStreamController<Uint8Array<ArrayBuffer>>} */ controller) {
                 let o = await helper.reader.read()
                 controller.enqueue(o.value)
             },
@@ -1346,6 +1338,60 @@ export function createTunnelTcpServerKoaRouter(param) {
             }
         })).on('error', (err) => { console.error('web stream error', err.message) })
     })
+}
+
+/**
+ * @param {{
+ * path:string;
+ * signal:AbortSignal;
+ * serverKey?:string;
+ * }} param 
+ */
+export function createTunnelTcpServerKoaMiddleware(param) {
+    /** @type{TunnelTcpServerHelperParam} */
+    let helperParam = {
+        serverKey: param.serverKey,
+        uniqueId: 1,
+        listenMap: new Map(),
+        dstMap: new Map(),
+    }
+
+    /** @type{Middleware<DefaultState, DefaultContext, any>} */
+    const middleware = (ctx, next) => {
+        if (param.path != ctx.path || ctx.method != 'POST') {
+            next()
+            return
+        }
+
+        console.info('clientId:', 'createTunnelTcpServerKoaMiddleware on post ' + param.path)
+        let helper = createTunnelTcpServerHelper(helperParam)
+        helper.writer = helper.writable.getWriter()
+        helper.reader = helper.readable.getReader()
+        ctx.req.on('error', (e) => { console.error('createTunnelTcpServerKoaMiddleware in req error', e.message) })
+        Readable.toWeb(ctx.req).pipeTo(createWritableStream({
+            async write(chunk) {
+                await helper.writer.write(chunk)
+            }
+        })).catch((err) => { console.error('web stream error', err.message) })
+
+        ctx.status = 200
+        ctx.response.set({
+            'Cache-Control': 'no-cache',
+            'Content-Type': 'application/octet-stream'
+        })
+        ctx.body = Readable.fromWeb(new ReadableStream({
+            async pull(/** @type{ReadableStreamController<Uint8Array<ArrayBuffer>>} */ controller) {
+                let o = await helper.reader.read()
+                controller.enqueue(o.value)
+            },
+            cancel() {
+                helperParam.dstMap.delete(helper.dstId)
+            }
+        })).on('error', (err) => { console.error('web stream error', err.message) })
+
+    }
+
+    return middleware
 }
 
 /**
@@ -1383,7 +1429,7 @@ export function createTunnelTcpClientHttp(param) {
     /** @type{WritableStreamDefaultWriter<Uint8Array>} */
     let socketWriter = null
     let bufferedTransform = createTimeBufferedTransformStream(50)
-    helper.readable.pipeThrough(bufferedTransform).pipeTo(new WritableStream({
+    helper.readable.pipeThrough(bufferedTransform).pipeTo(createWritableStream({
         /**
          * @param {Uint8Array<ArrayBufferLike>} chunk
          */
@@ -1426,7 +1472,7 @@ export function createTunnelTcpClientHttp(param) {
             },
         }, (res) => {
             param.oncreateoutconnect && param.oncreateoutconnect()
-            Readable.toWeb(res).pipeTo(new WritableStream({
+            Readable.toWeb(res).pipeTo(createWritableStream({
                 async write(chunk) {
                     await helper.writer.write(chunk)
                 }
@@ -1469,4 +1515,11 @@ export function createTunnelTcpClientHttp(param) {
     })
 
     return helper
+}
+
+/**
+ * @param {UnderlyingSink<Uint8Array<ArrayBuffer>>} param
+ */
+export function createWritableStream(param) {
+    return new WritableStream(param)
 }
