@@ -1430,9 +1430,6 @@ export function createTunnelTcpClientHttp(param) {
     let socketWriter = null
     let bufferedTransform = createTimeBufferedTransformStream(50)
     helper.readable.pipeThrough(bufferedTransform).pipeTo(createWritableStream({
-        /**
-         * @param {Uint8Array<ArrayBufferLike>} chunk
-         */
         async write(chunk) {
             while (!param.signal.aborted && socketWriter == null) {
                 await signal.promise
