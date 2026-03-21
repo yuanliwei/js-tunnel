@@ -1230,6 +1230,7 @@ export function createTunnelTcpServerWebSocket(param) {
  * signal:AbortSignal;
  * serverKey:string;
  * url:string;
+ * beforeconnect?:()=>Promise<void>;
  * }} param 
  */
 export function createTunnelTcpClientWebSocket(param) {
@@ -1256,6 +1257,9 @@ export function createTunnelTcpClientWebSocket(param) {
 
     async function connectWebSocket() {
         let promise = Promise_withResolvers()
+        if (param.beforeconnect) {
+            await param.beforeconnect()
+        }
         const ws = new WebSocket(param.url)
         ws.addEventListener('open', () => {
             socketWriter = createWritableStream({
