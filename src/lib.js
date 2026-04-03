@@ -1051,9 +1051,6 @@ export class TunnelTcpClientHelper {
                 buffer: Uint8Array_from(JSON.stringify(connectData)),
             }))
         }).listen(param.port)
-        server.on('error', (err) => {
-            console.error('TunnelTcpClientHelper.connect server error', err.message)
-        })
         this.param.signal.addEventListener('abort', () => { server.close() })
     }
 }
