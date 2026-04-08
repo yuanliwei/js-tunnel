@@ -24,10 +24,10 @@
   },
   "homepage": "https://github.com/yuanliwei/js-tunnel#readme",
   "devDependencies": {
-    "@koa/router": "^14.0.0",
-    "@types/node": "^24.2.1",
-    "koa": "^3.0.1",
+    "@koa/router": "^15.4.0",
+    "@types/node": "^25.5.2",
+    "koa": "^3.2.0",
     "log4js": "^6.9.1",
-    "ws": "^8.18.3"
+    "ws": "^8.20.0"
   }
 }
